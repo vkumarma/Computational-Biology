@@ -122,20 +122,22 @@ def local_alignment(v, w, score, indel_penalty):  # BA5F
     aligned_v = ""
     aligned_w = ""
     i, j = max_i, max_j
-    while backtrack[i][j] != "end":
+    while i > 0 and j > 0:
         if backtrack[i][j] == "diag":
             aligned_v = v[j - 1] + aligned_v
             aligned_w = w[i - 1] + aligned_w
             i -= 1
             j -= 1
-        elif backtrack[i][j] == "down":
+        if backtrack[i][j] == "down":
             aligned_v = "-" + aligned_v
             aligned_w = w[i - 1] + aligned_w
             i -= 1
-        elif backtrack[i][j] == "right":
+        if backtrack[i][j] == "right":
             aligned_v = v[j - 1] + aligned_v
             aligned_w = "-" + aligned_w
             j -= 1
+        if backtrack[i][j] == "end":
+            break
 
     return max_val, aligned_v, aligned_w
 
@@ -204,87 +206,53 @@ def fitting_alignment(v, w, indel_penalty):  # BA5H
     return max_val, aligned_v, aligned_w
 
 
-def overlap_alignment(v, w, indel_penalty):  # BA5I
-    m = len(v)  # len of v, col
-    n = len(w)  # len of w, row
-    s = [[0 for _ in range(m + 1)] for _ in range(n + 1)]
-    backtrack = [[None for _ in range(m + 1)] for _ in range(n + 1)]
+def overlap_alignment(v, w, indel, mismatch, match):
+    n, m = len(v), len(w)
 
-    for i in range(0, n + 1):  # first column has gap penalty
-        s[i][0] = -i * indel_penalty
+    # Initialize score and backtrack matrices with all zeros
+    score_mat = [[0] * (m + 1) for _ in range(n + 1)]
+    backtrack_mat = [[None] * (m + 1) for _ in range(n + 1)]
 
-    for i in range(1, n + 1):  # iterating matrix
+    # Fill the matrices
+    for i in range(1, n + 1):
         for j in range(1, m + 1):
+            match_score = match if v[i - 1] == w[j - 1] else mismatch
+            scores = [
+                score_mat[i - 1][j - 1] + match_score,  # Diagonal
+                score_mat[i - 1][j] + indel,  # Up (insert gap in w)
+                score_mat[i][j - 1] + indel  # Left (insert gap in v)
+            ]
+            score_mat[i][j] = max(scores)
+            backtrack_mat[i][j] = ['d', 'u', 'l'][scores.index(score_mat[i][j])]
 
-            diag = s[i - 1][j - 1]
-            down = s[i - 1][j]
-            right = s[i][j - 1]
+    # Find the position with the maximum score in the last row or column
+    max_score, max_j = max((score_mat[n][j], j) for j in range(m + 1))
+    i, j = n, max_j
 
-            if  w[i - 1] == v[j - 1]: # if match
-                diag = s[i - 1][j - 1] + 1
-                down = s[i - 1][j] - indel_penalty
-                right = s[i][j - 1] - indel_penalty
-
-            elif w[i - 1] != v[j - 1]: # if mis-match
-                diag = s[i - 1][j - 1] - indel_penalty
-                down = s[i - 1][j] - indel_penalty
-                right = s[i][j - 1] - indel_penalty
-
-            s[i][j] = max(diag, down, right)
-            if s[i][j] == diag:
-                backtrack[i][j] = "diag"
-            elif s[i][j] == down:
-                backtrack[i][j] = "down"
-            elif s[i][j] == right:
-                backtrack[i][j] = "right"
-
-    max_val = -1
-    max_i = len(w)
-
-    for i in range(0, n+1):  # iterating last row columns
-        if s[i][-1] > max_val:
-            max_val = s[i][-1]
-            max_i = i
-
-    aligned_v = ""
-    aligned_w = ""
-    i, j = max_i, m
-    while i != 0:
-        if backtrack[i][j] == "diag":
-            aligned_v = v[j - 1] + aligned_v
-            aligned_w = w[i - 1] + aligned_w
-            i -= 1
-            j -= 1
-        elif backtrack[i][j] == "down":
-            aligned_v = "-" + aligned_v
-            aligned_w = w[i - 1] + aligned_w
-            i -= 1
-        elif backtrack[i][j] == "right":
-            aligned_v = v[j - 1] + aligned_v
+    # Traceback to construct the alignment
+    aligned_v, aligned_w = "", ""
+    while i > 0 and j > 0:
+        if backtrack_mat[i][j] == 'd':
+            aligned_v = v[i - 1] + aligned_v
+            aligned_w = w[j - 1] + aligned_w
+            i, j = i - 1, j - 1
+        elif backtrack_mat[i][j] == 'u':
+            aligned_v = v[i - 1] + aligned_v
             aligned_w = "-" + aligned_w
+            i -= 1
+        elif backtrack_mat[i][j] == 'l':
+            aligned_v = "-" + aligned_v
+            aligned_w = w[j - 1] + aligned_w
             j -= 1
 
-    return max_val, aligned_v, aligned_w
+    return max_score, aligned_v, aligned_w
 
 
-v = "GCTTATTAACACCGGTCTCCTCAGAGTTGGGTCGCGATTGCATACGTTTCTTTGTCGAGCTGTCAAGTTGAAACAGTACTTCTACGCATAACTGAGCCACTCTGTAGTGTAGCCAGTTGGCGACGCGAGTTCTTTGCCATGCACAATAACGCTGTCGCTCACTCTAGCCAACAACTTGAAGAATTGAGACTTTAGGGTGGATCACAGAGGTTTGTTGTCCTATGCCCCATGTATCCGTTGAGATCACACCTGGGTTGCTACAGAACGTCCTGGCCTGCCGAAGTACGAAACGACGTTCACCGCGGGCTGATTGAAGTTGCCTCCCCAATACAGACAACTAGCGTATTCATTGAGGTATCTTGACACCAGTTGTTTTTGTGCCGGGTCAATCCTACGGCTCGTGGAGTAAGCACATTGTAGACACACATTACGGTTGGCGATGGATTCGCTTAGTTTCGCTTAAGAGCTCCCAGCAACAGTTGGTGTCAGTCTTCCTGGTATTGTTGACGACTATCAGTGAGACCTGAGATTGATATTACGAAGCGCTCACTACGGTATTGAACAAATAGCGTCGGCGCTTCCAAAACATGTGAGTCCCGTAAGACAAGACTCCGACTGCTCTTCAGGGCCAGAAACTACATAGGTAATGAACGGAAGAACCCAGAGTGGTTTTCGGGGGAGTAACTTATGCTTCAAGACTCGAAAAGTCCTAGCCAGGGGCTCAGTTTCGCACGCCTCACATTGTAAACACTTGGTCCATTACCCTATGCTTCATGGTATCAGAGAGTGGTCTTCAGTAATCAGCATACGAAGTTAACGCTCAAAAGTCCCCAGAATAGAATCCTACAACACTAACTTTTACGCATAACGGATTATTCCAGCCGTGCTCTAGGGCGGGCCAGAAGGGGGTGAACCTCTTAGGGCC"
-w = "ATGCTTCAGGTTTCGAAAGAGCCAAGCTCGGGGGGTCCTCGCAGCATTGGCTCAATTTGTAATACTGGTCCAGTCTACCCTAAGTTATGGTACTAGATATGGTCCTCCTCATCGACATGACTAGGCACGCTTAGAAGTCCTCGAATAGAAATGCCTCAAACACCGACTTTTATGGCTAACGGGTTATTTCTAAGCCGCACTTAGGCGGGCTAGAAAGGGTGATCTCTGCCAGTGCCAACTATGGACTTGGGTGCGGATATCATTCGTGGGGGAAGGCTTGCGTCGTGTGGAGACCTGCCCCGCCCTTTCTAGCGCCTCCACCCTACATTACTTTGTCGGATACCGCACGTTCGTCAATATTCGCATTAGAGAGCAGGCTCAATATGAGGAAGCAGGTCACGATGTCTCACGTACATTCGCGAGCGTTTCTGTACTGCTTGCTCATTACTGTACACGTAGAAACGGGATAGTCTGTGAACAGTGTTGTGAAACAGTTTACTTAAGTCTTGGGACCTCCCTCTAGAATATCTCGATCCATGATACATAATGATGTCGTGGGGGTCGGCTGACCTGTCCTGGCTCGTAGTTCGCGAAGCCTTGTAGCATATGTGGGTCTGACTCGATGAAGGCACTTGCCCGCAAGCGAAGAATATTCGTAGTGACCCTACTGAGTGACGTAGAGGGTAGAAGCAGTCGTATTGCCGGACGCTCCTTTCTTGACAACCCTTGCTGTTCGGGGCAGGCCCTGCTTTCGACGGACCACACCGCCTACTCTCCCTCGTAGCCAGCCATATTAAAGGCATTTTTGGACTCCCTCGCATAGTCTATGCGTAATGGACTGCTACTGCATGAATAGAGCGAGCCTATCTCGGCAAACGCCCTAACTTGAACACGTTGGTGCAAGCAATCGCGAACA"
+v = "GACTGGTTTAAACCAAAGATACGATGGTTCTCCAAGCCATCCGGACTATAAAGGTGCCGGTGGAACTATCGGCTTGGTTTTCGGAGGTGTGACGAGCAAGGTCATCGTTCGGGGGCGCGCGGCTGCGCAGATGCCAACGGTATAGTACACATTATCATGTCTCTTCGCATCTTATTCACCACGGTCTCAGTAGAACTTCTAGGGATATACAAATCACCGTTTCGGTGTGTTCTTCCACAGGGGTTATTCACGTTGGTACATGCCCGGTTGTTCCACTGAATGGCGAGGAGTTGAAGTATACTCATATAGATAGGGAGAGGACCGCCTATGGACCTGTACCCGACCTGGCGTTGTGCCAGACTTATCTCTAACAAATGTGAAAGCAAGCACCCACAGCCATACGGACAACAGGCGTGAATGCCAACCAATCCCTCTCCCGCGTGCTACAGGCAGAAAAGTCATGAAATCGACTACCACCACCGAGACGAACTAGCCCGAAGAAATTGCGCGCCGTTGGAGGGTGTCTAACGATGACGTAGAGCAAATGCTAGCGATACGCGGAGTCAGATCGACCCGGGCGTCAAAGGCCAATCGCAAGTTTTCTCATAGAATTCCATCCCGGTTAGTCATACGGCGCGTAGAGCTCGCACACGTATAGCTGCAGTCCGTATGGCCCAGCTTTGTTCCCCATGATGGGTTTCCCGTGTATTCGGCAAGAGTGATTGTACTGCTGATGGTTGTATGGGTTGGTCGCCTCTGAGTGATAGCATTAGTTTCGTTTGTACGCGTAACTAGGACTGGCACGTGCGACAGCCATGGGTCACCCGCTGGTACCTTCAATCGTACGCGTGTCTTCG"
+w = "ATCGCAGCCTTCTCATGGGTCACAGCCCCGGTTAGTCGTCGCGCCCGCAGTGCTCGCACACCGATTAACCTGCAGCTCGTGGCCCGACTTTGTCCTCAGGGTGGGGTGTTCCTGGTATTTAGGCATAAGTGGTTACTCGCTGATGTTGTAAGGGTGCCGTGGCTCTGACCCGCTACATTAACATAGCTTGGACGGTAACTAAGGCAGGCCCTTCAGCAGCCACGGGTAAATCCGGTGAGTCCCTTTAAGTATAGCTTTATTGCCTACAGCGAACTGAAGGACCCTCCTGACCGAAGGTATATATGAAAACCGTACTGTGCACCAATTATACACTGCATCGGTTCTACCGTTTTTTGACTGACAGGGGCATTGGGTCTGCTATACGCGAGGAGCGAGAGCGCAGGGCCAATCCCTAGCTATTTGGACGAAGCCACACCCTACTGCAGCAAGGCGTAGGGCCCCCGACCAAACCACGTTTAATATTACACTTTTAAGACGAAGGGCAAATATTTCTCGGTTAAGACCACCTGACGTTAATCTCTATGCGCCTGAACCATCCACTAACCCACGCACTTGTTAAGGTTCTCTATGTCCCAACCGCGGTAACTCCTCTCGCAAACACTCGGTCCTGCGTGTGTATCGACCACTACTAGAGCAGACCGTTAACGCGTCCTCCACTATATCAGTGCTCGCCCCGATTAGGAGTCCGTACGAACTCCCAAGTTAGCTGTAACCTCGTACTGAGGTAAATCCTGTGAAATTTCGCTGCACAAATTGCGGACGCCTAGTCCGGATTGCGCTCCCGACTTATTAATGACGTGGTAATATCTTACTATGTTGATTTTGCTCGTACACGT"
 
-s, str1, str2 = overlap_alignment(v, w, 2)
+s, str1, str2 = overlap_alignment(v, w, -5,-1, 1)
 print(s)
 print(str1)
 print(str2)
-# temp = local_alignment_output(s, backtrack, v, w)
-# print(s[-1][-1])
-# print(temp[0])
-# print(temp[1])
-# l, backtrack = global_alignment(v, w, score, 5)
-# temp = global_output_alignment(backtrack,v, w)
-# a = temp[0]
-# b = temp[1]
-# print(l)
-# print(a)
-# print("\n")
-# print(b)
 
-#
